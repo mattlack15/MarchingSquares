@@ -217,7 +217,7 @@ class SquareMarcher(
      */
     private fun binarySearch(side: Side): Pair<Double, Double> {
 
-        val numSteps = 16
+        val numSteps = 12
 
         val dir = side.startValue
 

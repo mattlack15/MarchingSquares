@@ -20,7 +20,7 @@ class Renderer {
     init {
         frame.defaultCloseOperation = JFrame.EXIT_ON_CLOSE
 
-        val screenSize = Toolkit.getDefaultToolkit().getScreenSize()
+        val screenSize = Toolkit.getDefaultToolkit().screenSize
 
         frame.setSize((screenSize.width * 0.8).toInt(), (screenSize.height * 0.8).toInt())
         frame.isVisible = true
@@ -66,22 +66,57 @@ class Renderer {
         val lines = marcher?.march() ?: emptyList()
 
         val thickness = 6
-        // Rounded stroke
-        (g as Graphics2D).stroke = BasicStroke(thickness.toFloat(), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND)
 
-        // Draw the contour lines in parallel
+        // Rounded stroke
+        g.stroke = BasicStroke(thickness.toFloat(), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND)
+
+        val mappings = mutableMapOf<Pair<Int, Int>, MutableSet<Pair<Int, Int>>>()
+
         for (line in lines) {
-            pool.submit {
-                g.drawLine(
-                    line.start.first.toInt(),
-                    line.start.second.toInt(),
-                    line.end.first.toInt(),
-                    line.end.second.toInt()
-                )
-            }
+            val start = Pair(line.start.first.toInt(), line.start.second.toInt())
+            val end = Pair(line.end.first.toInt(), line.end.second.toInt())
+
+            val startList = mappings.getOrPut(start) { mutableSetOf() }
+            startList.add(end)
+
+            val endList = mappings.getOrPut(end) { mutableSetOf() }
+            endList.add(start)
         }
 
-        pool.awaitQuiescence(1, java.util.concurrent.TimeUnit.SECONDS)
+        // Draw the contour lines
+        var longestChain = 0
+        for (line in lines) {
+            val lst = mutableListOf<Pair<Int, Int>>()
+
+            val start = Pair(line.start.first.toInt(), line.start.second.toInt())
+            val end = Pair(line.end.first.toInt(), line.end.second.toInt())
+            if (mappings[start]?.contains(end) == false) continue
+
+            mappings[start]?.remove(end)
+            mappings[end]?.remove(start)
+            lst.add(start)
+            lst.add(end)
+
+            var current: Pair<Int, Int>? = end
+            while (current != null) {
+                val next = mappings[current]?.firstOrNull()
+                if (next != null) {
+                    mappings[current]?.remove(next)
+                    mappings[next]?.remove(current)
+                    lst.add(next)
+                }
+                current = next
+            }
+
+            val xPoints = lst.map { it.first }.toIntArray()
+            val yPoints = lst.map { it.second }.toIntArray()
+
+            g.drawPolyline(xPoints, yPoints, lst.size)
+
+            if (lst.size > longestChain) {
+                longestChain = lst.size
+            }
+        }
 
         if (marcher == null || !showDots) return
 
