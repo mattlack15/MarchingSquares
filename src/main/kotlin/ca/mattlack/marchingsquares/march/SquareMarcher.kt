@@ -3,6 +3,7 @@ package ca.mattlack.marchingsquares.march
 import ca.mattlack.marchingsquares.function.DifferentiableFunction
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ForkJoinPool
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.locks.ReentrantLock
 
 class SquareMarcher(
@@ -34,52 +35,50 @@ class SquareMarcher(
         val dotMap = computeDotMap0()
 
         val contourLines = mutableListOf<ContourLine>()
-        // We also need a lock for the above list because we will be modifying it in parallel
-        val lock = ReentrantLock()
-
-        // Parallel tasks
-        val tasks = mutableListOf<() -> Unit>()
 
         forEachSquare { x, y ->
-            tasks.add {
 
-                val realX = min.first + x * (max.first - min.first) / resolution.first
-                val realY = min.second + y * (max.second - min.second) / resolution.second
-                val stepX = (max.first - min.first) / resolution.first
-                val stepY = (max.second - min.second) / resolution.second
+            val minXY = dotMap[x][y]
+            val maxXY = dotMap[x + 1][y + 1]
+            val minXmaxY = dotMap[x][y + 1]
+            val maxXminY = dotMap[x + 1][y]
 
-                val minXY = dotMap[x][y]
-                val maxXY = dotMap[x + 1][y + 1]
-                val minXmaxY = dotMap[x][y + 1]
-                val maxXminY = dotMap[x + 1][y]
-                val mid = predicate(realX + stepX / 2, realY + stepY / 2)
+            // 0 indicates that the function returned NaN or an infinite value
+            // Do not count squares that contain one of those values
 
-                // 0 indicates that the function returned NaN or an infinite value
-                // Do not count squares that contain one of those values
-                val anyZero = minXY == 0 || maxXY == 0 || minXmaxY == 0 || maxXminY == 0 || mid == 0
-                if (anyZero) return@add
+            val allNegative = minXY < 0 && maxXY < 0 && minXmaxY < 0 && maxXminY < 0
+            if (allNegative) return@forEachSquare
 
-                val square = Square(
-                    Pair(realX, realY),
-                    Pair(realX + stepX, realY + stepY),
-                    convertPredicate(minXY),
-                    convertPredicate(maxXY),
-                    convertPredicate(minXmaxY),
-                    convertPredicate(maxXminY),
-                    convertPredicate(mid)
-                )
+            val allPositive = minXY > 0 && maxXY > 0 && minXmaxY > 0 && maxXminY > 0
+            if (allPositive) return@forEachSquare
 
-                val case = square.getCase()
-                if (case == 0 || case == 15) return@add
+            val realX = min.first + x * (max.first - min.first) / resolution.first
+            val realY = min.second + y * (max.second - min.second) / resolution.second
+            val stepX = (max.first - min.first) / resolution.first
+            val stepY = (max.second - min.second) / resolution.second
 
-                val lines = computeContourLines(square)
-                lock.lock()
-                contourLines.addAll(lines)
-                lock.unlock()
-            }
+            val mid = predicate(realX + stepX / 2, realY + stepY / 2)
+
+            val anyZero = minXY == 0 || maxXY == 0 || minXmaxY == 0 || maxXminY == 0 || mid == 0
+            if (anyZero) return@forEachSquare
+
+            val square = Square(
+                Pair(realX, realY),
+                Pair(realX + stepX, realY + stepY),
+                convertPredicate(minXY),
+                convertPredicate(maxXY),
+                convertPredicate(minXmaxY),
+                convertPredicate(maxXminY),
+                convertPredicate(mid)
+            )
+
+            val case = square.getCase()
+            if (case == 0 || case == 15) return@forEachSquare
+
+            val lines = computeContourLines(square)
+            contourLines.addAll(lines)
+
         }
-
-        parallel(tasks)
 
         return contourLines
     }
@@ -103,36 +102,15 @@ class SquareMarcher(
         val stepX = (max.first - min.first) / resolution.first
         val stepY = (max.second - min.second) / resolution.second
 
-        val tasks = mutableListOf<() -> Unit>()
         for (x in 0..resolution.first) {
             for (y in 0..resolution.second) {
                 val realX = min.first + x * stepX
                 val realY = min.second + y * stepY
-                tasks.add {
-                    grid[x][y] = predicate(realX, realY)
-                }
+                grid[x][y] = predicate(realX, realY)
             }
         }
-
-        parallel(tasks)
 
         return grid
-    }
-
-    /**
-     * Run tasks in parallel using the provided executor.
-     */
-    private fun parallel(tasks: List<() -> Unit>) {
-        val futures = mutableListOf<CompletableFuture<*>>()
-        for (task in tasks) {
-            val future = CompletableFuture<Void>()
-            parallelExecutor.submit {
-                task()
-                future.complete(null)
-            }
-            futures.add(future)
-        }
-        CompletableFuture.allOf(*futures.toTypedArray()).join()
     }
 
     /**
@@ -155,6 +133,7 @@ class SquareMarcher(
         // Top Right,
         // Top Left
         when (case) {
+
             0b1010, 0b0101 -> {
                 val cond = if (case == 0b1010) square.mid else !square.mid
                 if (cond) {
@@ -165,21 +144,27 @@ class SquareMarcher(
                     lines.add(getLine(sides[1], sides[2]))
                 }
             }
+
             0b1100, 0b0011 -> {
                 lines.add(getLine(sides[1], sides[3]))
             }
+
             0b1001, 0b0110 -> {
                 lines.add(getLine(sides[0], sides[2]))
             }
+
             0b1110, 0b0001 -> {
                 lines.add(getLine(sides[2], sides[3]))
             }
+
             0b1101, 0b0010 -> {
                 lines.add(getLine(sides[1], sides[2]))
             }
+
             0b1011, 0b0100 -> {
                 lines.add(getLine(sides[0], sides[1]))
             }
+
             0b0111, 0b1000 -> {
                 lines.add(getLine(sides[0], sides[3]))
             }
@@ -217,7 +202,7 @@ class SquareMarcher(
      */
     private fun binarySearch(side: Side): Pair<Double, Double> {
 
-        val numSteps = 12
+        val numSteps = 8
 
         val dir = side.startValue
 
@@ -248,7 +233,7 @@ class SquareMarcher(
         val maxXminY: Boolean,
         val mid: Boolean
     ) {
-        val sides: Array<Side> = Array(4) { computeSide(it) }
+        val sides: Array<Side> by lazy { Array(4) { computeSide(it) } }
 
         fun getCase(): Int {
             return (if (minXmaxY) 1 else 0) +

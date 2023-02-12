@@ -5,6 +5,8 @@ import ca.mattlack.marchingsquares.function.ConstantFunction
 import ca.mattlack.marchingsquares.function.IdentityFunction
 import ca.mattlack.marchingsquares.march.SquareMarcher
 import java.awt.*
+import java.awt.image.BufferedImage
+import java.awt.image.VolatileImage
 import java.util.concurrent.ForkJoinPool
 import javax.swing.JFrame
 
@@ -22,12 +24,11 @@ class Renderer {
 
         val screenSize = Toolkit.getDefaultToolkit().screenSize
 
-        frame.setSize((screenSize.width * 0.8).toInt(), (screenSize.height * 0.8).toInt())
+        frame.setSize((screenSize.width * 0.9).toInt(), (screenSize.height * 0.9).toInt())
         frame.isVisible = true
 
         // Center
         frame.setLocationRelativeTo(null)
-
 
         frame.createBufferStrategy(2)
 
@@ -35,7 +36,7 @@ class Renderer {
             { _, _ -> 0.0 },
             Pair(0.0, 0.0),
             Pair(frame.width.toDouble(), frame.height.toDouble()),
-            Pair(frame.width / 8, frame.height / 8),
+            Pair(frame.width / 4, frame.height / 4),
             pool
         )
 
@@ -44,10 +45,14 @@ class Renderer {
     fun render() {
         val buffer = frame.bufferStrategy.drawGraphics
 
-        buffer.clearRect(0, 0, frame.width, frame.height)
-        draw(buffer)
+        val volatileImage = frame.createVolatileImage(frame.width, frame.height)
+
+        draw(volatileImage.graphics)
+
+        buffer.drawImage(volatileImage, 0, 0, null)
 
         buffer.dispose()
+        volatileImage.flush()
         frame.bufferStrategy.show()
     }
 
