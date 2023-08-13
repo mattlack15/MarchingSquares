@@ -34,7 +34,7 @@ fun main() {
 
     val balls = mutableListOf<MetaBall>()
 
-    for (i in 1..6) {
+    repeat(6) {
         val radius = radiusBase + Random().nextDouble() * variance - variance / 2
         val x = Random().nextDouble() * renderer.frame.width / 2.0 + renderer.frame.width / 4.0
         val y = Random().nextDouble() * renderer.frame.height / 2.0 + renderer.frame.height / 4.0
